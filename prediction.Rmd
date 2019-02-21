@@ -1,6 +1,6 @@
 ---
 title: "HUDK4051: Prediction - Comparing Trees"
-author: "Charles Lang"
+author: "Juan Djuwadi"
 date: "1/9/2018"
 output: html_document
 ---
@@ -12,14 +12,8 @@ In this assignment we will be using the tree algorithms to build models of which
 ## Software
 
 In order to generate our models we will need several packages. The first package you should install is [caret](https://cran.r-project.org/web/packages/caret/index.html).
-
+å
 There are many prediction packages available and they all have slightly different syntax. caret is a package that brings all the different algorithms under one hood using the same syntax. 
-
-We will also be accessing an algorithm from the [Weka suite](https://www.cs.waikato.ac.nz/~ml/weka/). Weka is a collection of machine learning algorithms that have been implemented in Java and made freely available by the University of Waikato in New Zealand. To access these algorithms you will need to first install both the [Java Runtime Environment (JRE) and Java Development Kit](http://www.oracle.com/technetwork/java/javase/downloads/jre9-downloads-3848532.html) on your machine. You can then then install the [RWeka](https://cran.r-project.org/web/packages/RWeka/index.html) package within R.
-
-(Issue 1: failure to install RWeka/RWekajars, paste "sudo R CMD javareconf" into terminal and try to install again)
-
-**Weka requires Java and Java causes problems. If you cannot install Java and make Weka work, please follow the alternative instructions at line 121**
 
 The last package you will need is [C50](https://cran.r-project.org/web/packages/C50/index.html).
 
@@ -30,12 +24,24 @@ The data comes from a university registrar's office. The code book for the varia
 Upload the drop-out.csv data into R as a data frame. 
 
 ```{r}
-
+DO <- read.csv("drop-out.csv")
 ```
 
 The next step is to separate your data set into a training set and a test set. Randomly select 25% of the students to be the test data set and leave the remaining 75% for your training data set. (Hint: each row represents an answer, not a single student.)
 
 ```{r}
+library(dplyr)
+set.seed(1234)
+DOUnique <- as.data.frame(unique(DO$student_id))
+
+#Samples 25% of the Student IDs
+DO25 <- DOUnique %>% sample_frac(0.25)
+names(DO25) <- c("student_id")
+
+#We Use Inner Join to Take Just the Students with Students IDs in the 25% Sample Data Frame
+#We Use Anti Join to Take the Students with Student IDs NOT in the Sample Data Frame (remaining 75%)
+training <- inner_join(DO, DO25, by = "student_id")
+testing <- anti_join(DO, DO25, by = "student_id")
 
 
 ```
@@ -44,8 +50,15 @@ For this assignment you will be predicting the student level variable "complete"
 (Hint: make sure you understand the increments of each of your chosen variables, this will impact your tree construction)
 
 Visualize the relationships between your chosen variables as a scatterplot matrix.  Save your image as a .pdf named scatterplot_matrix.pdf. Based on this visualization do you see any patterns of interest? Why or why not?
-
+#Complete and Years have a significant relationship. We see that years is strongly correlated with other variables as well. Most people who completed the course were in their first year or early on in their years. We project that years will be an important split in our decision tree. 
 ```{r}
+#Set Color for Scatterplot Matrix, We Correlate The Variables Against The Yes and No Outcomes Of Completion
+cols <- character(dim(DO)[1])
+cols[which(DO$complete == "yes")] <- "yellow3"
+cols[which(DO$complete == "no")] <- "slateblue4"
+
+#Scatterplot Matrix
+pairs( ~ years + entrance_test_score + enroll_date_time + courses_taken + online + course_id, data = DO, col = cols)
 
 ```
 
@@ -57,8 +70,10 @@ Construct a classification tree that predicts complete using the caret package.
 
 ```{r}
 library(caret)
+install.packages("rpart.plot")
+library(rpart.plot)
 
-TRAIN2 <- TRAIN1[,c(2:10)] #Remove the student_id variable that we do not want to use in the model
+training2 <- training[,c(2:10)] #Remove the student_id variable that we do not want to use in the model
 
 #Define the control elements we would like to use
 ctrl <- trainControl(method = "repeatedcv", #Tell caret to perform 10-fold cross validation
@@ -67,12 +82,12 @@ ctrl <- trainControl(method = "repeatedcv", #Tell caret to perform 10-fold cross
                 summaryFunction = twoClassSummary)
 
 #Define the model
-cartFit <- train(complete ~ ., #Define which variable to predict 
-                data = TRAIN2, #Define the data set to train the model on
+cartFit <- train(complete ~ ., #Define which variable to predict
+                data = training2, #Define the data set to train the model on
                 trControl = ctrl, #Tell caret the control elements
                 method = "rpart", #Define the model type
-                metric = "ROC", #Tell caret to calculate the ROC curve
-                preProc = c("center", "scale")) #Center and scale the data to minimize the 
+                metric = "ROC") #Tell caret to calculate the ROC curve
+                 #Center and scale the data to minimize the 
 
 #Check the results
 cartFit
@@ -80,65 +95,92 @@ cartFit
 #Plot ROC against complexity 
 plot(cartFit)
 
+#Plot the Tree
+prp(cartFit$finalModel, box.palette = "Reds", tweak = 1.2)
 ```
 
 Describe important model attribues of your tree. Do you believe it is a successful model of student performance, why/why not?
+#When running the tree multiple times, we see that years, course_taken, and course_id are consistent nodes (top branches). We can conclude that these are among the most significant. Years represents how long the students have been in their program. We see that those in their second, third, and so on years (years greater than 1) were more likely to drop out of their courses. This is consistent with the scatterplot matrix we've generated above which shows that those in their first year were more willing to stay to complete the class. Within the the students who were in their first years, those who have taken MORE than four courses were more likely to complete the courses. Notably, the courses_taken decision rule goes against the intuition provided by the first node which suggests that the longer a student is in the program, the more likely they would drop out out of a program. The course_id decision rule indicates that students who take courses with higher course_ids are more likely to complete. This might indicate that these courses (higher id courses) are major requirements and so students are less likely to drop.
 
 What does the plot represent? What information does this plot tell us?
+#The plot displays ROC regressed against CP (Complexity Parameter). The complexity parameter is the threshold associated to comparing the cost of adding an additional node. The ROC curve is a tool to see if predictive models can distinguish between true positives and negatives; this is done by regressing sensitivity (probability of accurately predicing a real positive is positive) against 1 - specificity (probability of predicing a real negative will be positive). The ROC value is the area under this curve and depicts accuracy. The plot displays a negative linear relationship. Thus, as the cost to split more nodes in the decision tree increases, the accuracy of the model generally decreases. 
 
 Now predict results from the test data and describe import attributes of this test. Do you believe it is a successful model of student performance, why/why not?
+#Running the model on the test data we see that it has an accuracy of roughly 90%. This is a very high accuracy rate. Through this metric alone, we can conclude that the it is a successful model for predicting whether a student will drop out of the class or not. 
 
 ```{r}
-TEST2 <- TEST1[,c(2:10)] #Remove the student_id variable that we do not want to use in the model
+testing2 <- testing[,c(2:10)] #Remove the student_id variable that we do not want to use in the model
 
 #Generate prediction using previously trained model
-cartClasses <- predict(cartFit, newdata = TEST2)
+cartClasses <- predict(cartFit, newdata = testing2)
 
 #Generate model statistics
-confusionMatrix(data = cartClasses, TEST2$complete)
+confusionMatrix(data = cartClasses, testing2$complete)
 
 ```
 
 ## C4.5-Type Trees
-
-You will now repeat the same prediction but using a different tree-based algorithm called [J48](). J48 is a Java implementation of the C4.5 decsion tree algorithm of [Quinlan (1993)](). 
-
 How does the C4.5 algorithm differ from the CART algorithm?
 
-## IF YOU CANNOT MAKE WEKA WORK PLEASE SKIP TO LINE 125
-
-Train the J48 model on the same training data and examine your results.
-```{r}
-
-```
-Describe important model attribues of your tree. Do you believe it is a successful model of student performance, why/why not?
-
-What does the plot represent? What information does this plot tell us?
-
-Now test your new J48 model by predicting the test data and generating model fit statistics.
-
-```{r}
-
-
-```
-
-## Alternative to Weka - if you made Weka work you can skip to line 136
 Train a Conditional Inference Tree using the `party` package on the same training data and examine your results.
 ```{r}
+install.packages("party")
+library(party)
+ctreeFit <- train(complete ~ .,
+                data = testing2,
+                trControl = ctrl,
+                method = "ctree",
+                metric = "ROC")
 
+ctreeFit
+
+plot(ctreeFit)
+print(ctreeFit)
+
+#We Plot the Tree Model for the Conditional Inference Tree
+plot(ctreeFit$finalModel)
+plot(ctreeFit$finalModel, type = "simple")
 ```
 Describe important model attribues of your tree. Do you believe it is a successful model of student performance, why/why not?
+#The important model attriutes remains the same: years and course_taken remain the significant attributes. The model is crowded but obtains an accuracy high into the 80%. Thus, the model is successful in predicting student drop out.
 
 What does the plot represent? What information does this plot tell us?
+#The plot displays the ROC value (area under ROC curve) regressed agaist the 1 - P-value threshold. The conditional inference tree uses significance test procedures to select variables of interest. The plot displays a mountain-type, pointed shape. The peak describes the value where the model is most accurate. Reading from the graph, we see that a 1 - P-value Threshold of 0.5 produces the highest model accuracy. 
 
 Now test your new Conditional Inference model by predicting the test data and generating model fit statistics.
+```{r}
+TESTCI <- testing[,c(2:10)] #Remove the student_id variable that we do not want to use in the model
+
+#Generate prediction using previously trained model
+ctreeFitClass <- predict(ctreeFit, newdata = TESTCI)
+
+#Generate model statistics
+confusionMatrix(data = ctreeFitClass, TESTCI$complete)
+
+```
 
 There is an updated version of the C4.5 model called C5.0, it is implemented in the C50 package. What improvements have been made to the newer version? 
+#More accurate, faster, and less memory. C5.0 also uses variable misclassification costs, which weigs certain classification errors more seriously than others. 
 
 Install the C50 package, train and then test the C5.0 model on the same data.
 
 ```{r}
+install.packages("C50")
+library(C50)
+c50Fit <- train(complete ~ .,
+                data = training2,
+                trControl = ctrl,
+                method = "C5.0",
+                metric = "ROC",
+                preProc = c("center", "scale"))
 
+c50Fit
+
+plot(c50Fit)
+
+c50Classes <- predict(c50Fit, newdata = testing2)
+
+confusionMatrix(data = c50Classes, testing2$complete)
 ```
 
 ## Compare the models
@@ -146,10 +188,12 @@ Install the C50 package, train and then test the C5.0 model on the same data.
 caret allows us to compare all three models at once.
 
 ```{r}
-resamps <- resamples(list(cart = cartFit, jfoureight = j48Fit, cfiveo = c50Fit))
+resamps <- resamples(list(cart = cartFit, ctree = ctreeFit, cfiveo = c50Fit))
 summary(resamps)
 ```
 
 What does the model summary tell us? Which model do you believe is the best?
+#The model summary tells us the quartiles of the models in terms of its ROC, Sensitivity, and Specificity. We that the C5 package generates the highest mean and medians for ROC and has the highest accuracy.
 
 Which variables (features) within your chosen model are important, do these features provide insights that may be useful in solving the problem of students dropping out of courses?
+#My chosen model is C5. The important variables are years, courses_taken, and course_id. While this gives us some insight into why students are dropping, converting them into actions to reduce dropout rate may be difficult as it doens't identify those who were dropping out because they were struggling. Looking into a smaller subset of particular classes with other variables may give us better information.  
