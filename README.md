@@ -7,9 +7,11 @@
 In this project, I built various models to predict student course dropout and then compared the performance of those models. The three models tested are the CART Model, the Conditional Inference Tree Model, and C50. We find that C50 performs the best based on ROC metrics. 
 
 CART Tree
+
 ![](CARTTree.png)
 
 Conditional Inference Tree
+
 ![](CITTree.png)
 
 
